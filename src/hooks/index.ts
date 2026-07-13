@@ -1,153 +1,93 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useExamEngine } from '@/store';
+import { useEffect, useState, useCallback } from 'react';
 
 export const useTimer = (initialSeconds: number, onTimeUp?: () => void) => {
   const [seconds, setSeconds] = useState(initialSeconds);
-  const [isRunning, setIsRunning] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isRunning, setIsRunning] = useState(true);
 
   useEffect(() => {
-    if (!isRunning || seconds <= 0) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (seconds === 0 && onTimeUp) {
-        onTimeUp();
-      }
-      return;
-    }
+    if (!isRunning || seconds <= 0) return;
 
-    intervalRef.current = setInterval(() => {
+    const interval = setInterval(() => {
       setSeconds(prev => {
-        const newSeconds = prev - 1;
-        if (newSeconds === 0 && onTimeUp) {
-          onTimeUp();
+        if (prev <= 1) {
+          onTimeUp?.();
+          return 0;
         }
-        return Math.max(0, newSeconds);
+        return prev - 1;
       });
     }, 1000);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isRunning, seconds, onTimeUp]);
+    return () => clearInterval(interval);
+  }, [isRunning, onTimeUp, seconds]);
 
-  return {
-    seconds,
-    setSeconds,
-    isRunning,
-    setIsRunning,
-    start: () => setIsRunning(true),
-    stop: () => setIsRunning(false),
-    reset: () => {
-      setIsRunning(false);
-      setSeconds(initialSeconds);
-    },
-  };
+  return { seconds: Math.max(0, seconds), isRunning };
 };
 
-export const useAutoSave = (saveFunction: () => Promise<void>, intervalMs: number = 30000) => {
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isSavingRef = useRef(false);
+export const useAutoSave = (callback: () => Promise<void>, interval: number) => {
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
 
   const startAutoSave = useCallback(() => {
-    if (intervalRef.current) return;
-    
-    intervalRef.current = setInterval(async () => {
-      if (!isSavingRef.current) {
-        isSavingRef.current = true;
-        try {
-          await saveFunction();
-        } catch (error) {
-          console.error('Auto-save failed:', error);
-        } finally {
-          isSavingRef.current = false;
-        }
+    let timeoutId: NodeJS.Timeout;
+
+    const performAutoSave = async () => {
+      setIsAutoSaving(true);
+      try {
+        await callback();
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+      } finally {
+        setIsAutoSaving(false);
+        timeoutId = setTimeout(performAutoSave, interval);
       }
-    }, intervalMs);
-  }, [saveFunction, intervalMs]);
+    };
+
+    timeoutId = setTimeout(performAutoSave, interval);
+
+    return () => clearTimeout(timeoutId);
+  }, [callback, interval]);
 
   const stopAutoSave = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    // The cleanup is handled by the return function in startAutoSave
   }, []);
 
-  return { startAutoSave, stopAutoSave };
+  return { isAutoSaving, startAutoSave, stopAutoSave };
 };
 
-export const useFullscreen = () => {
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const enterFullscreen = useCallback(async () => {
-    try {
-      const element = document.documentElement;
-      if (element.requestFullscreen) {
-        await element.requestFullscreen();
-        setIsFullscreen(true);
-      } else if ((element as any).webkitRequestFullscreen) {
-        await (element as any).webkitRequestFullscreen();
-        setIsFullscreen(true);
-      }
-    } catch (error) {
-      console.error('Fullscreen request failed:', error);
-    }
-  }, []);
-
-  const exitFullscreen = useCallback(async () => {
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
-      }
-    } catch (error) {
-      console.error('Exit fullscreen failed:', error);
-    }
-  }, []);
-
+export const useBeforeUnload = (enabled: boolean, message: string) => {
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
+    if (!enabled) return;
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
-
-  return { isFullscreen, enterFullscreen, exitFullscreen };
-};
-
-export const useBeforeUnload = (enabled: boolean, message: string = 'Are you sure you want to leave?') => {
-  useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (enabled) {
-        e.preventDefault();
-        e.returnValue = message;
-        return message;
-      }
+      e.preventDefault();
+      e.returnValue = message;
+      return message;
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [enabled, message]);
 };
 
-export const useKeyboardShortcuts = (shortcuts: Record<string, () => void>) => {
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      const key = `${e.ctrlKey ? 'ctrl+' : ''}${e.shiftKey ? 'shift+' : ''}${e.key.toLowerCase()}`;
-      if (shortcuts[key]) {
-        e.preventDefault();
-        shortcuts[key]();
-      }
-    };
+export const useLocalStorage = <T,>(key: string, initialValue: T) => {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.error('Failed to read from localStorage:', error);
+      return initialValue;
+    }
+  });
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
-  }, [shortcuts]);
+  const setValue = useCallback((value: T | ((val: T) => T)) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.error('Failed to write to localStorage:', error);
+    }
+  }, [key, storedValue]);
+
+  return [storedValue, setValue] as const;
 };
