@@ -1,40 +1,42 @@
 import React from 'react';
 
-interface ProgressBarProps {
+export interface ProgressBarProps {
   percentage: number;
-  label?: string;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
+  color?: 'blue' | 'green' | 'red' | 'yellow';
 }
-
-const sizeClasses = {
-  sm: 'h-2',
-  md: 'h-3',
-  lg: 'h-4',
-};
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({
   percentage,
-  label,
   size = 'md',
   showLabel = true,
+  color = 'blue',
 }) => {
-  const displayPercentage = Math.min(100, Math.max(0, percentage));
+  const sizeStyles = {
+    sm: 'h-2',
+    md: 'h-3',
+    lg: 'h-4',
+  };
+
+  const colorStyles = {
+    blue: 'bg-blue-600',
+    green: 'bg-green-600',
+    red: 'bg-red-600',
+    yellow: 'bg-yellow-600',
+  };
 
   return (
     <div>
-      {showLabel && label && (
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
-          <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{displayPercentage.toFixed(1)}%</span>
-        </div>
-      )}
-      <div className={`w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden ${sizeClasses[size]}`}>
+      <div className={`w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden ${sizeStyles[size]}`}>
         <div
-          className="bg-gradient-to-r from-indigo-500 to-purple-600 h-full transition-all duration-500 ease-out rounded-full"
-          style={{ width: `${displayPercentage}%` }}
+          className={`${colorStyles[color]} h-full transition-all duration-300`}
+          style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
         />
       </div>
+      {showLabel && (
+        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{percentage}%</p>
+      )}
     </div>
   );
 };
